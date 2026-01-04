@@ -4,29 +4,42 @@ from bs4 import BeautifulSoup
 KEYWORDS = ['дизайн', 'фото', 'web', 'python']
 URL = 'https://habr.com/ru/articles/'
 
-html = requests.get(URL).text
-soup = BeautifulSoup(html, 'html.parser')
+try:
+    response = requests.get(URL, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, 'html.parser')
 
-output_file = 'Результаты поиска.txt'
-with open(output_file, 'w', encoding='utf-8') as file:
+    found_count = 0
+
     for article in soup.find_all('article'):
-        title_tag = article.find('h2').find('a')
+        title_tag = article.find('h2')
         if not title_tag:
             continue
 
-        title = title_tag.text
-        link = title_tag.get('href', '')
+        title_link = title_tag.find('a')
+        if not title_link:
+            continue
+
+        title = title_link.text.strip()
+        href = title_link.get('href', '')
+        link = 'https://habr.com' + href if href.startswith('/') else href
+
         time_tag = article.find('time')
-        date = time_tag.get('title', 'Нет даты').split(',')[0] if time_tag else 'Нет даты'
-        text = title.lower()
-        content = article.find('div', class_=lambda x: x and ('article-formatted-body' in x or 'tm-article-body' in x))
+        if time_tag:
+            date = time_tag.get('datetime', '').split('T')[0] \
+                if time_tag.get('datetime') else time_tag.text.strip()
+        else:
+            date = 'Без даты'
 
-        if content:
-            text += ' ' + content.text.lower()
+        search_text = title.lower()
+        preview_div = article.find('div', class_='tm-article-body tm-article-snippet__lead')
+        if preview_div and preview_div.text:
+            search_text += ' ' + preview_div.text.strip().lower()
 
-        if any(word in text for word in KEYWORDS):
-            line = f'{date} – {title} – {link}'
-            print(line)
-            file.write(line + '\n')
+        if any(word in search_text for word in KEYWORDS):
+            print(f'{date} – {title} – {link}')
+            found_count += 1
 
-print(f'Готово! Результаты поиска сохранены в {output_file}')
+except requests.exceptions.RequestException as e:
+    print(f"Ошибка при запросе к сайту: {e}")
+    print("Проверьте подключение к интернету, корректность ссылки и попробуйте снова.")
